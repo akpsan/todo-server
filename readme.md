@@ -1,11 +1,11 @@
-## Todo app server
+# Todo app server
 NodeJS,
 
 Express,
 
 MongoDB and Mongoose
 
-# Setup
+## Setup
 
 To start development server, run `node index.js`
 
