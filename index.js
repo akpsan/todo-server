@@ -5,6 +5,11 @@ const port = 3002;
 
 app.use(express.json());
 
+/**
+ * DB Stuff
+ * Mongoose
+ */
+
 //Import the mongoose module
 const mongoose = require("mongoose");
 
@@ -18,9 +23,6 @@ const db = mongoose.connection;
 //Bind connection to error event (to get notification of connection errors)
 db.on("error", console.error.bind(console, "MongoDB connection error:"));
 
-/**
- * DB Stuff
- */
 const Schema = mongoose.Schema;
 
 const TodoModalSchema = new Schema({
@@ -31,16 +33,19 @@ const TodoModalSchema = new Schema({
 });
 
 var TodoModal = mongoose.model("TodoModal", TodoModalSchema);
+
 /**
  * Routes
+ * There is only two routes / and /todos
  */
+
 app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
 app.get("/todos", (req, res) => {
   TodoModal.find({}, function (err, todos) {
-    if (err) return handleError(err);
+    if (err) return res.status(500).send(err);
     res.send(todos);
   });
 });
@@ -48,32 +53,17 @@ app.get("/todos", (req, res) => {
 app.get("/todos/:id", (req, res) => {
   const { id } = req.params;
   TodoModal.find({ id: id }, function (err, todo) {
-    if (err) return handleError(err);
+    if (err) return res.status(500).send(err);
     res.send(todo);
   });
 });
 
 app.post("/todos/:id", (req, res) => {
   const { id } = req.params;
-  TodoModal.findByIdAndUpdate(
-    // the id of the item to find
-    id,
-
-    // the change to be made. Mongoose will smartly combine your existing
-    // document with this change, which allows for partial updates too
-    req.body,
-
-    // an option that asks mongoose to return the updated version
-    // of the document instead of the pre-updated one.
-    { new: true },
-
-    // the callback function
-    (err, todo) => {
-      // Handle any possible database errors
-      if (err) return res.status(500).send(err);
-      return res.send(todo);
-    }
-  );
+  TodoModal.findByIdAndUpdate(id, req.body, { new: true }, (err, todo) => {
+    if (err) return res.status(500).send(err);
+    return res.send(todo);
+  });
 });
 
 app.post("/todos", (req, res) => {
@@ -84,7 +74,7 @@ app.post("/todos", (req, res) => {
     dueAt: new Date(),
   });
   newTodo.save(function (err) {
-    if (err) return handleError(err);
+    if (err) return res.status(500).send(err);
     res.status(200).send("Created");
   });
 });
