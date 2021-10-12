@@ -13,12 +13,40 @@ app.use(express.json());
 app.use(cors());
 
 /**
+ * Auth middleware
+ *
+ */
+
+const isAuthenticated = (req, res, next) => {
+  const bearerHeader = req.headers.authorization;
+  const parts = bearerHeader.split(" ");
+  if (parts.length === 2) {
+    const scheme = parts[0];
+    const token = parts[1];
+
+    if (/^Bearer$/i.test(scheme)) {
+      jwt.verify(token, process.env.MY_SERVER_SECRET, function (err, decoded) {
+        if (err) {
+          console.log(err);
+          res.sendStatus(401);
+        } else {
+          console.log("Auth success");
+          next();
+        }
+      });
+    }
+  }
+  res.sendStatus(422);
+};
+
+/**
  * DB Stuff
  * Mongoose
  */
 
 //Import the mongoose module
 const mongoose = require("mongoose");
+const e = require("express");
 
 //Set up default mongoose connection
 const mongoDB = process.env.MONGO_DB_URL;
@@ -82,7 +110,8 @@ UserModelSchema.path("email").validate(async (v) => {
  *
  */
 
-app.get("/", (req, res) => {
+app.get("/", isAuthenticated, (req, res) => {
+  console.log("here");
   res.send("Hello World!");
 });
 
