@@ -19,24 +19,25 @@ app.use(cors());
 
 const isAuthenticated = (req, res, next) => {
   const bearerHeader = req.headers.authorization;
-  const parts = bearerHeader.split(" ");
-  if (parts.length === 2) {
-    const scheme = parts[0];
-    const token = parts[1];
-
-    if (/^Bearer$/i.test(scheme)) {
-      jwt.verify(token, process.env.MY_SERVER_SECRET, function (err, decoded) {
-        if (err) {
-          console.log(err);
-          res.sendStatus(401);
-        } else {
-          console.log("Auth success");
-          next();
-        }
-      });
+  if (bearerHeader) {
+    const parts = bearerHeader.split(" ");
+    if (parts.length === 2) {
+      const scheme = parts[0];
+      const token = parts[1];
+      if (/^Bearer$/i.test(scheme)) {
+        jwt.verify(token, process.env.MY_SERVER_SECRET, function (err) {
+          if (err) {
+            console.log(err);
+            res.sendStatus(401);
+          } else {
+            console.log("Auth success");
+            next();
+          }
+        });
+      }
     }
   }
-  res.sendStatus(422);
+  res.sendStatus(401);
 };
 
 /**
@@ -110,43 +111,42 @@ UserModelSchema.path("email").validate(async (v) => {
  *
  */
 
-app.get("/", isAuthenticated, (req, res) => {
-  console.log("here");
+ app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
-app.get("/todos", (req, res) => {
+app.get("/todos", isAuthenticated, (req, res) => {
   TodoModel.find({}, function (err, todos) {
-    if (err) return res.status(500).send(err);
+    if (err) return res.sendStatus(500).send(err);
     res.send(todos);
   });
 });
 
-app.get("/todos/:id", (req, res) => {
+app.get("/todos/:id", isAuthenticated, (req, res) => {
   const { id } = req.params;
   TodoModel.find({ id: id }, function (err, todo) {
-    if (err) return res.status(500).send(err);
+    if (err) return res.sendStatus(500).send(err);
     res.send(todo);
   });
 });
 
-app.post("/todos/:id", (req, res) => {
+app.post("/todos/:id", isAuthenticated, (req, res) => {
   const { id } = req.params;
   TodoModel.findByIdAndUpdate(id, req.body, { new: true }, (err, todo) => {
-    if (err) return res.status(500).send(err);
+    if (err) return res.sendStatus(500).send(err);
     return res.send(todo);
   });
 });
 
-app.post("/todos", (req, res) => {
+app.post("/todos", isAuthenticated, (req, res) => {
   const { title = "Empty todo" } = req.body;
   let newTodo = new TodoModel({
     title,
     dueAt: new Date(),
   });
   newTodo.save(function (err) {
-    if (err) return res.status(500).send(err);
-    res.status(200).send("Created");
+    if (err) return res.sendStatus(500).send(err);
+    res.sendStatus(200).send("Created");
   });
 });
 
@@ -155,7 +155,7 @@ app.post("/signup", (req, res) => {
   const hash = bcrypt.hashSync(password, 10);
   const newUser = new UserModel({ email, username, password: hash });
   newUser.save(function (err, user) {
-    if (err) return res.status(500).send(err);
+    if (err) return res.sendStatus(500).send(err);
     const token = jwt.sign(
       { username: user.name, id: user._id, role: user.role },
       process.env.MY_SERVER_SECRET,
@@ -163,7 +163,7 @@ app.post("/signup", (req, res) => {
         expiresIn: "7d",
       }
     );
-    res.status(200).send(token);
+    res.sendStatus(200).send(token);
   });
 });
 
@@ -171,17 +171,17 @@ app.post("/login", async (req, res) => {
   const { email, password } = req.body;
   UserModel.findOne({ email: email }, (err, user) => {
     if (err) {
-      return res.status(500).send(err);
+      return res.sendStatus(500).send(err);
     }
     const isAuthenticated = bcrypt.compareSync(password, user.password);
     if (isAuthenticated) {
       const token = jwt.sign({ ...user }, process.env.MY_SERVER_SECRET, {
         expiresIn: "7d",
       });
-      res.status(200).send(token);
+      res.sendStatus(200).send(token);
     } else {
       console.log("Attempt to authenticate failed.");
-      res.status(401).send("");
+      res.sendStatus(401);
     }
   });
 });
