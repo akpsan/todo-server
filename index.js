@@ -4,9 +4,11 @@ const bcrypt = require("bcrypt");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const morgan = require("morgan");
+const { OAuth2Client } = require("google-auth-library");
 
 const app = express();
 const port = 3002;
+const OAuthClient = new OAuth2Client(process.env.GOOGLE_OAUTH_CLIENT_ID);
 
 app.use(morgan("dev"));
 app.use(express.json());
@@ -35,9 +37,25 @@ const isAuthenticated = (req, res, next) => {
           }
         });
       }
+    } else {
+      res.sendStatus(401);
     }
+  } else {
+    res.sendStatus(401);
   }
-  res.sendStatus(401);
+};
+
+const verifyOAuth = async (oAuthToken) => {
+  const ticket = await OAuthClient.verifyIdToken({
+    idToken: oAuthToken,
+    audience: process.env.GOOGLE_OAUTH_CLIENT_ID, // Specify the CLIENT_ID of the app that accesses the backend
+    // Or, if multiple clients access the backend:
+    //[CLIENT_ID_1, CLIENT_ID_2, CLIENT_ID_3]
+  });
+  const payload = ticket.getPayload();
+  const userid = payload["sub"];
+  if (userid) return { userid, payload };
+  else return {};
 };
 
 /**
@@ -47,7 +65,6 @@ const isAuthenticated = (req, res, next) => {
 
 //Import the mongoose module
 const mongoose = require("mongoose");
-const e = require("express");
 
 //Set up default mongoose connection
 const mongoDB = process.env.MONGO_DB_URL;
@@ -111,13 +128,13 @@ UserModelSchema.path("email").validate(async (v) => {
  *
  */
 
- app.get("/", (req, res) => {
+app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
 app.get("/todos", isAuthenticated, (req, res) => {
   TodoModel.find({}, function (err, todos) {
-    if (err) return res.sendStatus(500).send(err);
+    if (err) return res.sendStatus(500);
     res.send(todos);
   });
 });
@@ -125,7 +142,7 @@ app.get("/todos", isAuthenticated, (req, res) => {
 app.get("/todos/:id", isAuthenticated, (req, res) => {
   const { id } = req.params;
   TodoModel.find({ id: id }, function (err, todo) {
-    if (err) return res.sendStatus(500).send(err);
+    if (err) return res.sendStatus(500);
     res.send(todo);
   });
 });
@@ -133,7 +150,7 @@ app.get("/todos/:id", isAuthenticated, (req, res) => {
 app.post("/todos/:id", isAuthenticated, (req, res) => {
   const { id } = req.params;
   TodoModel.findByIdAndUpdate(id, req.body, { new: true }, (err, todo) => {
-    if (err) return res.sendStatus(500).send(err);
+    if (err) return res.sendStatus(500);
     return res.send(todo);
   });
 });
@@ -144,9 +161,9 @@ app.post("/todos", isAuthenticated, (req, res) => {
     title,
     dueAt: new Date(),
   });
-  newTodo.save(function (err) {
-    if (err) return res.sendStatus(500).send(err);
-    res.sendStatus(200).send("Created");
+  newTodo.save(function (err, todo) {
+    if (err) return res.sendStatus(500);
+    res.send(todo);
   });
 });
 
@@ -155,35 +172,80 @@ app.post("/signup", (req, res) => {
   const hash = bcrypt.hashSync(password, 10);
   const newUser = new UserModel({ email, username, password: hash });
   newUser.save(function (err, user) {
-    if (err) return res.sendStatus(500).send(err);
+    if (err) return res.sendStatus(500);
     const token = jwt.sign(
-      { username: user.name, id: user._id, role: user.role },
+      { username: user.username, id: user._id, role: user.role },
       process.env.MY_SERVER_SECRET,
       {
         expiresIn: "7d",
       }
     );
-    res.sendStatus(200).send(token);
+    res.send(token);
   });
 });
 
 app.post("/login", async (req, res) => {
-  const { email, password } = req.body;
-  UserModel.findOne({ email: email }, (err, user) => {
-    if (err) {
-      return res.sendStatus(500).send(err);
-    }
-    const isAuthenticated = bcrypt.compareSync(password, user.password);
-    if (isAuthenticated) {
-      const token = jwt.sign({ ...user }, process.env.MY_SERVER_SECRET, {
-        expiresIn: "7d",
+  const { email, password, method, oAuthToken = null } = req.body;
+  console.log("Auth method", method);
+  if (method === "Internal") {
+    UserModel.findOne({ email: email }, (err, user) => {
+      if (err) {
+        console.log("1");
+        return res.sendStatus(500);
+      } else {
+        console.log("2");
+        const isAuthenticated = bcrypt.compareSync(password, user.password);
+        if (isAuthenticated) {
+          console.log("3");
+          const token = jwt.sign(
+            { username: user.username, id: user._id, role: user.role },
+            process.env.MY_SERVER_SECRET,
+            {
+              expiresIn: "7d",
+            }
+          );
+          return res.send({ token });
+        } else {
+          console.log("4");
+          console.log("Attempt to authenticate failed.");
+          return res.sendStatus(401);
+        }
+      }
+    });
+  } else if (method === "OAuth" && oAuthToken) {
+    const token = await verifyOAuth(oAuthToken);
+    if (token.userid) {
+      const OAuthEmail = token.payload.email;
+      UserModel.findOne({ email: OAuthEmail }, (err, user) => {
+        if (err) {
+          console.log("err", err);
+        } else if (!user) {
+          const gUser = new UserModel({
+            OAuthEmail, username: token.payload.given_name, password: ''
+          });
+          const jwToken = jwt.sign(
+            { username: gUser.username, id: gUser._id, role: gUser.role },
+            process.env.MY_SERVER_SECRET,
+            {
+              expiresIn: "7d",
+            }
+          );
+          return res.send({ jwToken });
+
+        } else {
+          console.log(user);
+          const jwToken = jwt.sign(
+            { username: user.username, id: user._id, role: user.role },
+            process.env.MY_SERVER_SECRET,
+            {
+              expiresIn: "7d",
+            }
+          );
+          return res.send({ jwToken });
+        }
       });
-      res.sendStatus(200).send(token);
-    } else {
-      console.log("Attempt to authenticate failed.");
-      res.sendStatus(401);
     }
-  });
+  }
 });
 
 app.listen(port, () => {
