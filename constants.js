@@ -1,0 +1,9 @@
+export const USER_TYPES = {
+    INTERNAL_USER: "INTERNAL_USER",
+    OAUTH_USER: "OAUTH_USER"
+}
+
+export const AUTH_METHODS = {
+    OAUTH: "OAUTH",
+    INTERNAL: "INTERNAL"
+}
